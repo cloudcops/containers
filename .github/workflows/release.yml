@@ -106,7 +106,7 @@ jobs:
 
           # Extract the app version from the Dockerfile's ENV variable
           # This handles potential spaces and quotes around the version string.
-          APP_VERSION=$(grep -i '^\s*ENV\s*APP_VERSION' ${{ matrix.path }}/Dockerfile | cut -d'=' -f2 | xargs | tr -d '"')
+          APP_VERSION=$(grep -i -A 10 '^\s*ENV' ${{ matrix.path }}/Dockerfile | grep -i 'APP_VERSION=' | cut -d'=' -f2 | xargs | tr -d '"')
           
           if [ -z "$APP_VERSION" ]; then
             echo "Error: APP_VERSION not found in ${{ matrix.path }}/Dockerfile"
