@@ -115,9 +115,8 @@ jobs:
 
           # Construct the full image tag. e.g., ghcr.io/your-org/nginx:1.25.3
           # Using tr '[:upper:]' '[:lower:]' to ensure owner and image names are lowercase, as required by Docker.
-          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           IMAGE_NAME_LC=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
-          TAGS="ghcr.io/$OWNER_LC/$IMAGE_NAME_LC:$APP_VERSION"
+          TAGS="ghcr.io/cloudcops/containers/$IMAGE_NAME_LC:$APP_VERSION"
 
           echo "image_name=${IMAGE_NAME_LC}" >> $GITHUB_OUTPUT
           echo "tags=${TAGS}" >> $GITHUB_OUTPUT

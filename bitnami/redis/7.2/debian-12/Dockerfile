@@ -59,3 +59,4 @@ EXPOSE 6379
 USER 1001
 ENTRYPOINT [ "/opt/bitnami/scripts/redis/entrypoint.sh" ]
 CMD [ "/opt/bitnami/scripts/redis/run.sh" ]
+
