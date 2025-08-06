@@ -61,3 +61,4 @@ WORKDIR /app
 USER 1001
 ENTRYPOINT [ "/opt/bitnami/scripts/apache/entrypoint.sh" ]
 CMD [ "/opt/bitnami/scripts/apache/run.sh" ]
+
