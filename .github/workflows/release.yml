@@ -1,0 +1,142 @@
+# This file is AI generated, however I went through everything and verified it's functionality
+
+name: Build and Push Changed Images
+
+# This workflow runs on every push to the main branch.
+# This effectively means it runs after a PR is merged.
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  # =====================================================================================
+  # JOB 1: Find which package/version folders have changed.
+  # This job generates a "matrix" for the next job to run against.
+  # =====================================================================================
+  find-changes:
+    name: Find Changed Packages
+    runs-on: ubuntu-latest
+    outputs:
+      # The output is a JSON string representing the matrix for the next job.
+      # e.g., '{"include":[{"path":"bitnami/nginx/1.25"},{"path":"bitnami/redis/7.0"}]}'
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # We need the full history to compare the last two commits.
+          fetch-depth: 2
+
+      - name: Install jq
+        run: sudo apt-get install -y jq
+
+      - name: Identify changed versionfolders
+        id: set-matrix
+        run: |
+          # 1. Get a list of all files changed in the last commit.
+          # 2. Filter for only those files inside the 'bitnami/' directory.
+          # 3. For each changed file, find its parent directory that contains a Dockerfile.
+          # 4. Get a unique, sorted list of these directories.
+          CHANGED_DIRS=$(git diff --name-only HEAD~1 HEAD | \
+            grep '^bitnami/' | \
+            while read -r file; do
+              dir=$(dirname "$file")
+              # Walk up the tree from the changed file's directory
+              while [[ "$dir" != "." && "$dir" != "bitnami" ]]; do
+                if [[ -f "$dir/Dockerfile" ]]; then
+                  echo "$dir"
+                  break
+                fi
+                dir=$(dirname "$dir")
+              done
+            done | sort -u)
+
+          # If no relevant directories were changed, output an empty matrix.
+          if [ -z "$CHANGED_DIRS" ]; then
+            echo "No changed Bitnami packages found."
+            echo "matrix={\"include\":[]}" >> $GITHUB_OUTPUT
+          else
+            # Convert the list of directories into a JSON object for the strategy matrix.
+            MATRIX=$(echo "$CHANGED_DIRS" | jq -R . | jq -s -c '{"include": map({path: .})}')
+            echo "Found changed packages: $MATRIX"
+            echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+          fi
+
+  # =====================================================================================
+  # JOB 2: Build and push the Docker images for each changed folder.
+  # This job runs in parallel for every path identified in the 'find-changes' job.
+  # =====================================================================================
+  build-and-push:
+    name: Build and Push
+    needs: find-changes
+    # Don't run if no changes
+    if: needs.find-changes.outputs.matrix != '{"include":[]}'
+    runs-on: ubuntu-latest
+    # Define permissions for pushing to the GitHub Container Registry.
+    permissions:
+      contents: read
+      packages: write
+
+    # Use the matrix of changed directories from the previous job.
+    strategy:
+      fail-fast: false # Don't cancel other jobs if one fails.
+      matrix: ${{ fromJSON(needs.find-changes.outputs.matrix) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract Metadata
+        id: meta
+        run: |
+          # Extract the package name from the path (e.g., "bitnami/nginx/1.25" -> "nginx")
+          IMAGE_NAME=$(echo ${{ matrix.path }} | cut -d/ -f2)
+
+          # Extract the app version from the Dockerfile's ENV variable
+          # This handles potential spaces and quotes around the version string.
+          APP_VERSION=$(grep -i -A 10 '^\s*ENV' ${{ matrix.path }}/Dockerfile | grep -i 'APP_VERSION=' | cut -d'=' -f2 | xargs | tr -d '"')
+          
+          if [ -z "$APP_VERSION" ]; then
+            echo "Error: APP_VERSION not found in ${{ matrix.path }}/Dockerfile"
+            exit 1
+          fi
+
+          # Construct the full image tag. e.g., ghcr.io/your-org/nginx:1.25.3
+          # Using tr '[:upper:]' '[:lower:]' to ensure owner and image names are lowercase, as required by Docker.
+          IMAGE_NAME_LC=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          TAGS="ghcr.io/cloudcops/containers/$IMAGE_NAME_LC:$APP_VERSION"
+
+          echo "image_name=${IMAGE_NAME_LC}" >> $GITHUB_OUTPUT
+          echo "tags=${TAGS}" >> $GITHUB_OUTPUT
+          echo "version=${APP_VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Build and push Docker image
+        id: build-and-push
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.path }} # The context is the versionfolder
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          labels: |
+            org.opencontainers.image.source=${{ github.repositoryUrl }}
+
+      - name: Print summary
+        run: |
+          echo "✅ Successfully built and pushed image:"
+          echo "   - Image: ${{ steps.meta.outputs.image_name }}"
+          echo "   - Tag:   ${{ steps.meta.outputs.version }}"
+          echo "   - Full Path: ${{ steps.meta.outputs.tags }}"
