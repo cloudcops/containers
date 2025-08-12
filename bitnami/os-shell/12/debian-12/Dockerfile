@@ -53,3 +53,4 @@ ENV APP_VERSION="12" \
     PATH="/opt/bitnami/common/bin:$PATH"
 
 USER 1001
+
