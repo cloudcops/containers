@@ -61,3 +61,4 @@ EXPOSE 27017
 USER 1001
 ENTRYPOINT [ "/opt/bitnami/scripts/mongodb/entrypoint.sh" ]
 CMD [ "/opt/bitnami/scripts/mongodb/run.sh" ]
+
