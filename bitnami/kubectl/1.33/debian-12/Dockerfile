@@ -55,3 +55,4 @@ ENV APP_VERSION="1.33.3" \
 USER 1001
 ENTRYPOINT [ "kubectl" ]
 CMD [ "--help" ]
+
